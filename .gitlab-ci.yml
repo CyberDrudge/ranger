@@ -1,0 +1,100 @@
+.default: &default
+  only:
+    - merge_requests
+    - web
+
+.default_tag: &default_tag
+  tags:
+    - backend-docker-large
+
+image: docker.phonepe.com/pp-maven:3.9.5-openjdk-17
+
+stages:
+  - build
+  - deploy
+  - merge
+  - security
+  - quality
+  - release
+
+merge_ready:
+  stage: quality
+  <<: *default
+  <<: *default_tag
+  script:
+    - mvn verify -U -Pquality_check -Dsonar.pullrequest.key=$CI_MERGE_REQUEST_IID -Dsonar.pullrequest.branch=$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME -Dsonar.pullrequest.base=$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+  when: manual
+
+post_merge:
+  stage: merge
+  <<: *default_tag
+  script:
+    - mvn clean verify -U
+  only:
+    refs:
+      - develop
+
+build_snapshot:
+  stage: build
+  <<: *default
+  <<: *default_tag
+  script:
+    - mvn -U clean package -DskipTests=true -Dmaven.install.skip=true
+
+Test (Optional):
+  <<: *default
+  <<: *default_tag
+  allow_failure: true
+  stage: build
+  before_script:
+    - export MAVEN_OPTS="-Xms3g -Xmx3g"
+  script:
+    - echo 'Running test cases. This will not analyse sonar!'
+    - mvn clean install -T 1C
+  when: manual
+
+
+deploy_artifacts:
+  stage: deploy
+  <<: *default
+  <<: *default_tag
+  when: manual
+  allow_failure: true
+  script:
+    - mvn clean deploy -U -DskipTests -Dmaven.deploy.skip=false
+  except:
+    - master
+    - develop
+
+
+#deploy_snapshot:
+#  stage: deploy
+#  <<: *default
+#  <<: *default_tag
+#  script:
+#    - export MAVEN_OPTS="-Xms3g -Xmx3g"
+#    - mvn -U clean package deploy -Pdocker -DskipTests=true -Dmaven.install.skip=true -DsnapshotSuffix="-${CI_COMMIT_BRANCH}"
+#  allow_failure: false
+#  when: manual
+
+# Do not add any script to Sandstorm as it comes from an org wide repo. Below is to change its stage
+#Sandstorm:
+#  stage: security
+
+#release:
+#  <<: *default_tag
+#  <<: *default
+#  stage: release
+#  script:
+#    - git remote set-url origin "git@gitlab.phonepe.com:${CI_PROJECT_PATH}.git"
+#    - git checkout master
+#    - git pull origin master
+#    - git checkout develop
+#    - git pull origin develop
+#    - mvn -U -Pdocker deploy jgitflow:release-start jgitflow:release-finish -Dmaven.install.skip=true -Dmaven.javadoc.skip=true
+#    - git push --all
+#    - git push --tags origin
+#  when: manual
+#  only:
+#    refs:
+#      - develop
