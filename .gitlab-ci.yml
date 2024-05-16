@@ -71,13 +71,11 @@ deploy_snapshot:
   stage: deploy
   <<: *default
   <<: *default_tag
-  when: manual
-  allow_failure: true
   script:
-    - mvn clean deploy -U -DskipTests -Dmaven.deploy.skip=false
-  except:
-    - master
-    - develop
+    - export MAVEN_OPTS="-Xms3g -Xmx3g"
+    - mvn -U clean package deploy -Pdocker -DskipTests -Dmaven.install.skip=true
+  allow_failure: false
+  when: manual
 
 # Do not add any script to Sandstorm as it comes from an org wide repo. Below is to change its stage
 #Sandstorm:
