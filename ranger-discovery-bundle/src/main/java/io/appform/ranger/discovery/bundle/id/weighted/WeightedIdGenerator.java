@@ -1,13 +1,16 @@
 package io.appform.ranger.discovery.bundle.id.weighted;
 
+import com.codahale.metrics.MetricRegistry;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeMap;
 import com.google.common.collect.TreeRangeMap;
-import io.appform.ranger.discovery.bundle.id.config.IdGeneratorRetryConfig;
+import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
 import io.appform.ranger.discovery.bundle.id.config.PartitionRange;
 import io.appform.ranger.discovery.bundle.id.config.WeightedIdConfig;
 import io.appform.ranger.discovery.bundle.id.constraints.PartitionValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 
@@ -21,33 +24,34 @@ import java.util.function.Function;
  */
 @Slf4j
 public class WeightedIdGenerator extends DistributedIdGenerator {
+    @Getter
     private int maxShardWeight;
     private final RangeMap<Integer, PartitionRange> partitionRangeMap;
 
-    public WeightedIdGenerator(final int partitionSize,
+    public WeightedIdGenerator(final IdGeneratorConfig idGeneratorConfig,
                                final Function<String, Integer> partitionResolverSupplier,
-                               final IdGeneratorRetryConfig retryConfig,
-                               final WeightedIdConfig weightedIdConfig) {
-        super(partitionSize, partitionResolverSupplier, retryConfig);
-        partitionRangeMap = createWeightRangeMap(weightedIdConfig);
+                               final MetricRegistry metricRegistry) {
+        super(idGeneratorConfig, partitionResolverSupplier, metricRegistry);
+        Preconditions.checkNotNull(idGeneratorConfig.getWeightedIdConfig());
+        partitionRangeMap = createWeightRangeMap(idGeneratorConfig.getWeightedIdConfig());
     }
 
-    public WeightedIdGenerator(final int partitionSize,
+    public WeightedIdGenerator(final IdGeneratorConfig idGeneratorConfig,
                                final Function<String, Integer> partitionResolverSupplier,
-                               final IdGeneratorRetryConfig retryConfig,
-                               final WeightedIdConfig weightedIdConfig,
-                               final IdFormatter idFormatterInstance) {
-        super(partitionSize, partitionResolverSupplier, retryConfig, idFormatterInstance);
-        partitionRangeMap = createWeightRangeMap(weightedIdConfig);
+                               final IdFormatter idFormatterInstance,
+                               final MetricRegistry metricRegistry) {
+        super(idGeneratorConfig, partitionResolverSupplier, idFormatterInstance, metricRegistry);
+        Preconditions.checkNotNull(idGeneratorConfig.getWeightedIdConfig());
+        partitionRangeMap = createWeightRangeMap(idGeneratorConfig.getWeightedIdConfig());
     }
 
     private RangeMap<Integer, PartitionRange> createWeightRangeMap(final WeightedIdConfig weightedIdConfig) {
         RangeMap<Integer, PartitionRange> partitionGroups = TreeRangeMap.create();
         int end = -1;
-        for (val shard : weightedIdConfig.getPartitions()) {
+        for (val partition : weightedIdConfig.getPartitions()) {
             int start = end + 1;
-            end += shard.getWeight();
-            partitionGroups.put(Range.closed(start, end), shard.getPartitionRange());
+            end += partition.getWeight();
+            partitionGroups.put(Range.closed(start, end), partition.getPartitionRange());
         }
         maxShardWeight = end;
         return partitionGroups;
@@ -63,8 +67,10 @@ public class WeightedIdGenerator extends DistributedIdGenerator {
     @Override
     protected Optional<Integer> getTargetPartitionId(final List<PartitionValidationConstraint> inConstraints, final boolean skipGlobal) {
         return Optional.ofNullable(
-                retrier.get(this::getTargetPartitionId))
-                .filter(key -> validateId(inConstraints, key, skipGlobal));
+                retrier.get(() -> {
+                    val partitionId = getTargetPartitionId();
+                    return validateId(inConstraints, partitionId, skipGlobal) ? partitionId : null;
+                }));
     }
 }
 

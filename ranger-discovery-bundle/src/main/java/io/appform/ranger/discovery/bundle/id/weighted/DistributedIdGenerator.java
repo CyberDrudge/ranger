@@ -1,18 +1,18 @@
 package io.appform.ranger.discovery.bundle.id.weighted;
 
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import dev.failsafe.Failsafe;
 import dev.failsafe.FailsafeExecutor;
 import dev.failsafe.RetryPolicy;
-import io.appform.ranger.discovery.bundle.id.Constants;
 import io.appform.ranger.discovery.bundle.id.Id;
 import io.appform.ranger.discovery.bundle.id.IdGenerator;
-import io.appform.ranger.discovery.bundle.id.config.IdGeneratorRetryConfig;
+import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
 import io.appform.ranger.discovery.bundle.id.constraints.PartitionValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatters;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.joda.time.DateTime;
@@ -28,8 +28,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -48,17 +46,16 @@ abstract class DistributedIdGenerator {
     private static final List<PartitionValidationConstraint> GLOBAL_CONSTRAINTS = new ArrayList<>();
     private static final Map<String, List<PartitionValidationConstraint>> DOMAIN_SPECIFIC_CONSTRAINTS = new HashMap<>();
     protected static final int NODE_ID = IdGenerator.getNodeId();
-    @Getter
-    private final Map<String, Map<Long, PartitionIdTracker>> idStore = new ConcurrentHashMap<>();
+    private final Map<String, PartitionIdTracker[]> idStore = new ConcurrentHashMap<>();
     protected final IdFormatter idFormatter;
     protected final Function<String, Integer> partitionResolver;
-    protected final IdGeneratorRetryConfig retryConfig;
-    protected final int partitionCount;
+    protected final IdGeneratorConfig idGeneratorConfig;
+    private final Meter retryLimitBreachedMeter;
 
     /*  idStore Structure
     {
-        prefix: {
-            timestamp: {
+        prefix: [
+            <timestamp>: {
                 partitions: [
                 {
                     ids: [],
@@ -71,37 +68,30 @@ abstract class DistributedIdGenerator {
             ],
                 counter: <int>
             }
-        }
+        ]
     }
     */
 
-    protected DistributedIdGenerator(final int partitionCount,
+    protected DistributedIdGenerator(final IdGeneratorConfig idGeneratorConfig,
                                      final Function<String, Integer> partitionResolverSupplier,
-                                     final IdGeneratorRetryConfig retryConfig,
-                                     final IdFormatter idFormatterInstance) {
-        this.partitionCount = partitionCount;
-        this.retryConfig = retryConfig;
+                                     final IdFormatter idFormatterInstance,
+                                     final MetricRegistry metricRegistry) {
+        this.idGeneratorConfig = idGeneratorConfig;
         this.partitionResolver = partitionResolverSupplier;
         this.idFormatter = idFormatterInstance;
+        this.retryLimitBreachedMeter = metricRegistry.meter("idGenerator.RetryLimitBreached");
         RetryPolicy<Integer> retryPolicy = RetryPolicy.<Integer>builder()
-                .withMaxAttempts(retryConfig.getPartitionRetryCount())
+                .withMaxAttempts(idGeneratorConfig.getRetryConfig().getPartitionRetryCount())
                 .handleIf(throwable -> true)
                 .handleResultIf(Objects::isNull)
                 .build();
         retrier = Failsafe.with(Collections.singletonList(retryPolicy));
-
-        val executorService = Executors.newScheduledThreadPool(1);
-        executorService.scheduleWithFixedDelay(
-                this::deleteExpiredKeys,
-                Constants.ID_DELETION_DELAY_IN_SECONDS,
-                Constants.ID_DELETION_DELAY_IN_SECONDS,
-                TimeUnit.SECONDS);
     }
 
-    protected DistributedIdGenerator(final int partitionCount,
+    protected DistributedIdGenerator(final IdGeneratorConfig idGeneratorConfig,
                                      final Function<String, Integer> partitionResolverSupplier,
-                                     final IdGeneratorRetryConfig retryConfig) {
-        this(partitionCount, partitionResolverSupplier, retryConfig, IdFormatters.partitionAware());
+                                     final MetricRegistry metricRegistry) {
+        this(idGeneratorConfig, partitionResolverSupplier, IdFormatters.partitionAware(), metricRegistry);
     }
 
     public synchronized void registerGlobalConstraints(final PartitionValidationConstraint... constraints) {
@@ -139,11 +129,12 @@ abstract class DistributedIdGenerator {
     }
 
     public Optional<Id> generateForPartition(final String prefix, final int targetPartitionId) {
-        val prefixIdMap = idStore.computeIfAbsent(prefix, k -> new ConcurrentHashMap<>());
         val currentTimestamp = new DateTime();
-        val timeKey = currentTimestamp.getMillis() / 1000;
+        val prefixIdMap = idStore.computeIfAbsent(prefix, k -> new PartitionIdTracker[idGeneratorConfig.getMaxDataBufferTimeInSeconds()]);
+        val timeKey = getTimeKey(currentTimestamp.getMillis() / 1000);
+        val partitionTracker = getPartitionTracker(prefixIdMap, currentTimestamp);
         val idCounter = generateForAllPartitions(
-                prefixIdMap.computeIfAbsent(timeKey, key -> new PartitionIdTracker(partitionCount)),
+                partitionTracker,
                 prefix,
                 currentTimestamp,
                 targetPartitionId);
@@ -166,19 +157,26 @@ abstract class DistributedIdGenerator {
                                                        final DateTime timestamp,
                                                        final int targetPartitionId) {
         val idPool = partitionIdTracker.getPartition(targetPartitionId);
-        int idIdx = idPool.getPointer().getAndIncrement();
-        int retry = 0;
-        while (idPool.getIdList().size() <= idIdx && retry < retryConfig.getIdGenerationRetryCount()) {
-            val counterValue = partitionIdTracker.getNextIdCounter().getAndIncrement();
-            val txnId = String.format("%s%s", prefix, idFormatter.format(timestamp, NODE_ID, counterValue));
-            val mappedPartitionId = partitionResolver.apply(txnId);
-            partitionIdTracker.getPartition(mappedPartitionId).getIdList().add(counterValue);
-            retry += 1;
-        }
-        if (idIdx < idPool.getIdList().size()) {
-            return Optional.of(idPool.getId(idIdx));
-        } else {
-            log.warn("Retry Limit reached - {} - {} - {}", retry, idIdx, targetPartitionId);
+        int retryCount = 0;
+        try {
+            while (retryCount < idGeneratorConfig.getRetryConfig().getIdGenerationRetryCount()) {
+                val counterValue = partitionIdTracker.getIdCounter();
+                val txnId = String.format("%s%s", prefix, idFormatter.format(timestamp, NODE_ID, counterValue));
+                val mappedPartitionId = partitionResolver.apply(txnId);
+                partitionIdTracker.addId(mappedPartitionId, counterValue);
+                retryCount += 1;
+                val idOptional = idPool.getNextId();
+                if (idOptional.isPresent()) {
+                    return idOptional;
+                }
+            }
+
+//            Retry Limit Breached
+            retryLimitBreachedMeter.mark();
+            log.debug("Retry Limit reached - {} - {}", retryCount, targetPartitionId);
+            return Optional.empty();
+        } catch (Exception e) {
+            log.error("Error while generating IDs", e);
             return Optional.empty();
         }
     }
@@ -208,14 +206,20 @@ abstract class DistributedIdGenerator {
      */
     public Optional<Id> generateWithConstraints(final String prefix, final String domain, final boolean skipGlobal) {
         val targetPartitionId = getTargetPartitionId(DOMAIN_SPECIFIC_CONSTRAINTS.getOrDefault(domain, Collections.emptyList()), skipGlobal);
-        return targetPartitionId.map(id -> generateForPartition(prefix, id).get());
+        return targetPartitionId.map(partitionId -> {
+            val id = generateForPartition(prefix, partitionId);
+            return id.orElse(null);
+        });
     }
 
     public Optional<Id> generateWithConstraints(final String prefix,
                                                 final List<PartitionValidationConstraint> inConstraints,
                                                 final boolean skipGlobal) {
         val targetPartitionId = getTargetPartitionId(inConstraints, skipGlobal);
-        return targetPartitionId.map(id -> generateForPartition(prefix, id).get());
+        return targetPartitionId.map(partitionId -> {
+            val id = generateForPartition(prefix, partitionId);
+            return id.orElse(null);
+        });
     }
 
     /**
@@ -276,11 +280,23 @@ abstract class DistributedIdGenerator {
         return null == failedLocalConstraint;
     }
 
-    private synchronized void deleteExpiredKeys() {
-        val timeThreshold = DateTime.now().getMillis() / 1000 - Constants.DELETION_THRESHOLD_IN_SECONDS;
-        for (val entry : idStore.entrySet()) {
-            entry.getValue().entrySet().removeIf(partitionIdTrackerEntry -> partitionIdTrackerEntry.getKey() < timeThreshold);
+    private int getTimeKey(long timeInSeconds) {
+        return (int) timeInSeconds % idGeneratorConfig.getMaxDataBufferTimeInSeconds();
+    }
+
+    private synchronized PartitionIdTracker getPartitionTracker(PartitionIdTracker[] partitionTrackerList, final DateTime timestamp) {
+        val timeKey = getTimeKey(timestamp.getMillis() / 1000);
+        if (timeKey >= partitionTrackerList.length) {
+            throw new IndexOutOfBoundsException("Key should be less than " + partitionTrackerList.length);
         }
+        if (partitionTrackerList[timeKey] == null) {
+            partitionTrackerList[timeKey] = new PartitionIdTracker(idGeneratorConfig.getPartitionCount(), idGeneratorConfig.getIdPoolSize(), timestamp);
+        }
+        val partitionTracker = partitionTrackerList[timeKey];
+        if (partitionTracker.getTimestamp().getMillis() / 1000 != timestamp.getMillis() / 1000) {
+            partitionTracker.reset(timestamp);
+        }
+        return partitionTracker;
     }
 
 }
