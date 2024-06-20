@@ -22,7 +22,8 @@ import static io.appform.ranger.discovery.bundle.id.Constants.MAX_DATA_STORAGE_T
 @AllArgsConstructor
 @NoArgsConstructor
 public class IdGeneratorConfig {
-    @NotEmpty
+    @NotNull
+    @Valid
     private IdGeneratorRetryConfig retryConfig;
 
     @Valid
