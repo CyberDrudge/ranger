@@ -32,7 +32,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * Distributed Id Generation
+ * Distributed ID Generation
  */
 @SuppressWarnings("unused")
 @Slf4j
@@ -121,7 +121,7 @@ abstract class DistributedIdGenerator {
      * Generate id with given prefix
      *
      * @param prefix String prefix for ID to be generated
-     * @return Generated Id
+     * @return Generated ID
      */
     public Optional<Id> generate(final String prefix) {
         val targetPartitionId = getTargetPartitionId();
@@ -184,7 +184,7 @@ abstract class DistributedIdGenerator {
     /**
      * Generate id that matches all passed constraints.
      * NOTE: There are performance implications for this.
-     * The evaluation of constraints will take it's toll on ID generation rates.
+     * The evaluation of constraints will take its toll on ID generation rates.
      *
      * @param prefix String prefix
      * @param domain Domain for constraint selection
@@ -197,12 +197,12 @@ abstract class DistributedIdGenerator {
     /**
      * Generate id that matches all passed constraints.
      * NOTE: There are performance implications for this.
-     * The evaluation of constraints will take it's toll on id generation rates.
+     * The evaluation of constraints will take its toll on id generation rates.
      *
      * @param prefix     String prefix
      * @param domain     Domain for constraint selection
      * @param skipGlobal Skip global constrains and use only passed ones
-     * @return Id if it could be generated
+     * @return ID if it could be generated
      */
     public Optional<Id> generateWithConstraints(final String prefix, final String domain, final boolean skipGlobal) {
         val targetPartitionId = getTargetPartitionId(DOMAIN_SPECIFIC_CONSTRAINTS.getOrDefault(domain, Collections.emptyList()), skipGlobal);
@@ -226,7 +226,7 @@ abstract class DistributedIdGenerator {
      * Generate id by parsing given string
      *
      * @param idString String idString
-     * @return Id if it could be generated
+     * @return ID if it could be generated
      */
     public Optional<Id> parse(final String idString) {
         if (idString == null

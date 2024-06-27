@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Weighted Id Generation
+ * Weighted ID Generation
  */
 @Slf4j
 public class WeightedIdGenerator extends DistributedIdGenerator {

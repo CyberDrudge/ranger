@@ -13,7 +13,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Partition Aware Id Generation
+ * Partition Aware ID Generation
  */
 @SuppressWarnings("unused")
 @Slf4j
