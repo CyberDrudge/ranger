@@ -22,7 +22,7 @@ public class WeightedIdConfig {
     @Valid
     private List<WeightedPartition> partitions;
 
-    @ValidationMethod(message = "Invalid Partition Range")
+    @ValidationMethod(message = "Partitions should be continuous")
     @JsonIgnore
     public boolean isPartitionWeightsValid() {
         List<WeightedPartition> sortedPartitions = new ArrayList<>(partitions);
