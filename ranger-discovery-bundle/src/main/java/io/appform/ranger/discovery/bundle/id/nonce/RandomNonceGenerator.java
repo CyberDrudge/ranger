@@ -23,7 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 
-public class RandomNonceGenerator extends NonceGeneratorBase {
+public class RandomNonceGenerator extends NonceGeneratorBase<IdValidationConstraint> {
     private final FailsafeExecutor<GenerationResult> RETRYER;
 
     public RandomNonceGenerator(final int nodeId, final IdFormatter idFormatter) {
@@ -82,7 +82,7 @@ public class RandomNonceGenerator extends NonceGeneratorBase {
                             IdInfo idInfo = random(collisionChecker);
                             val id = getIdFromIdInfo(idInfo, request.getPrefix(), request.getIdFormatter());
                             return new GenerationResult(idInfo,
-                                    validateId(request.getConstraints(),
+                                    validateId((List<IdValidationConstraint>) request.getConstraints(),
                                             id,
                                             request.isSkipGlobal()),
                                     request.getDomain());
@@ -101,6 +101,11 @@ public class RandomNonceGenerator extends NonceGeneratorBase {
                         }))
                 .filter(generationResult -> generationResult.getState() == IdValidationState.VALID)
                 .map(GenerationResult::getIdInfo);
+    }
+
+    @Override
+    public IdInfo generateForPartition(final String namespace, int targetPartitionId) {
+        return generate(namespace);
     }
 
     private IdInfo random(final CollisionChecker collisionChecker) {
@@ -156,18 +161,6 @@ public class RandomNonceGenerator extends NonceGeneratorBase {
                     : IdValidationState.INVALID_RETRYABLE;
         }
         return IdValidationState.VALID;
-    }
-
-    @Override
-    public Id getIdFromIdInfo(IdInfo idInfo, final String namespace, final IdFormatter idFormatter) {
-        val dateTime = getDateTimeFromTime(idInfo.getTime());
-        val id = String.format("%s%s", namespace, idFormatter.format(dateTime, getNodeId(), idInfo.getExponent()));
-        return Id.builder()
-                .id(id)
-                .exponent(idInfo.getExponent())
-                .generatedDate(dateTime.toDate())
-                .node(getNodeId())
-                .build();
     }
 
     @Override

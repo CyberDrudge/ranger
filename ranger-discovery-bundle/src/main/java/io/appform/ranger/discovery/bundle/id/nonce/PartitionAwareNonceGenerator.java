@@ -10,7 +10,6 @@ import io.appform.ranger.discovery.bundle.id.IdUtils;
 import io.appform.ranger.discovery.bundle.id.PartitionIdTracker;
 import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
 import io.appform.ranger.discovery.bundle.id.config.NamespaceConfig;
-import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.constraints.PartitionValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatters;
@@ -35,7 +34,7 @@ import java.util.function.Function;
 @SuppressWarnings("unused")
 @Slf4j
 @Getter
-public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
+public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionValidationConstraint> {
     private final FailsafeExecutor<Integer> RETRYER;
     private final Map<String, PartitionIdTracker[]> idStore = new ConcurrentHashMap<>();
     private final Function<String, Integer> partitionResolver;
@@ -152,13 +151,13 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
      */
     @Override
     public Optional<IdInfo> generateWithConstraints(final String namespace, final String domain, final boolean skipGlobal) {
-        val targetPartitionId = getTargetPartitionId(REGISTERED_DOMAINS.getOrDefault(domain, Domain.DEFAULT).getConstraints(), skipGlobal);
+        val targetPartitionId = getTargetPartitionId((List<PartitionValidationConstraint>)REGISTERED_DOMAINS.getOrDefault(domain, Domain.DEFAULT).getConstraints(), skipGlobal);
         return targetPartitionId.map(partitionId -> generateForPartition(namespace, partitionId));
     }
 
     @Override
     public Optional<IdInfo> generateWithConstraints(final String namespace,
-                                                    final List<IdValidationConstraint> inConstraints,
+                                                    final List<PartitionValidationConstraint> inConstraints,
                                                     final boolean skipGlobal) {
         val targetPartitionId = getTargetPartitionId(inConstraints, skipGlobal);
         return targetPartitionId.map(partitionId -> generateForPartition(namespace, partitionId));
@@ -166,7 +165,7 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
 
     @Override
     public Optional<IdInfo> generateWithConstraints(final IdGenerationRequest request) {
-        val targetPartitionId = getTargetPartitionId(request.getConstraints(), request.isSkipGlobal());
+        val targetPartitionId = getTargetPartitionId((List<PartitionValidationConstraint>) request.getConstraints(), request.isSkipGlobal());
         return targetPartitionId.map(partitionId -> generateForPartition(request.getPrefix(), partitionId));
     }
 

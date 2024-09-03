@@ -1,21 +1,27 @@
 package io.appform.ranger.discovery.bundle.id.generator;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import io.appform.ranger.discovery.bundle.id.Domain;
 import io.appform.ranger.discovery.bundle.id.Id;
 import io.appform.ranger.discovery.bundle.id.IdInfo;
-import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
+import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorBase;
+import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorType;
+import io.appform.ranger.discovery.bundle.id.nonce.PartitionAwareNonceGenerator;
 import io.appform.ranger.discovery.bundle.id.nonce.RandomNonceGenerator;
 import io.appform.ranger.discovery.bundle.id.request.IdGenerationRequest;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.joda.time.format.DateTimeFormatter;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -23,12 +29,13 @@ import java.util.regex.Pattern;
  */
 @SuppressWarnings("unused")
 @Slf4j
-public class IdGeneratorBase {
+public class IdGeneratorBase<T> {
 
     private final int MINIMUM_ID_LENGTH;
     protected final DateTimeFormatter DATE_TIME_FORMATTER;
     private final Pattern PATTERN;
     private static int NODE_ID;
+    @Getter
     private final IdFormatter idFormatter;
     protected final NonceGeneratorBase nonceGenerator;
 
@@ -47,6 +54,22 @@ public class IdGeneratorBase {
         this.PATTERN = pattern;
     }
 
+    protected IdGeneratorBase(final IdGeneratorConfig idGeneratorConfig,
+                              final Function<String, Integer> partitionResolverSupplier,
+                              final NonceGeneratorType nonceGeneratorType,
+                              final IdFormatter idFormatter,
+                              final MetricRegistry metricRegistry,
+                              final Clock clock,
+                              final int minimumIdLength,
+                              final DateTimeFormatter dateTimeFormatter,
+                              final Pattern pattern) {
+        this.idFormatter = idFormatter;
+        this.nonceGenerator = getNonceGenerator(nonceGeneratorType, idGeneratorConfig, partitionResolverSupplier, metricRegistry, clock);
+        this.MINIMUM_ID_LENGTH = minimumIdLength;
+        this.DATE_TIME_FORMATTER = dateTimeFormatter;
+        this.PATTERN = pattern;
+    }
+
     public synchronized void cleanUp() {
         nonceGenerator.cleanUp();
     }
@@ -55,24 +78,24 @@ public class IdGeneratorBase {
         nonceGenerator.registerDomain(domain);
     }
 
-    public synchronized void registerGlobalConstraints(final IdValidationConstraint... constraints) {
+    public synchronized void registerGlobalConstraints(final T... constraints) {
         registerGlobalConstraints(ImmutableList.copyOf(constraints));
     }
 
-    public synchronized void registerGlobalConstraints(final List<IdValidationConstraint> constraints) {
+    public synchronized void registerGlobalConstraints(final List<T> constraints) {
         Preconditions.checkArgument(null != constraints && !constraints.isEmpty());
         nonceGenerator.registerGlobalConstraints(constraints);
     }
 
     public synchronized void registerDomainSpecificConstraints(
             final String domain,
-            final IdValidationConstraint... validationConstraints) {
+            final T... validationConstraints) {
         registerDomainSpecificConstraints(domain, ImmutableList.copyOf(validationConstraints));
     }
 
     public synchronized void registerDomainSpecificConstraints(
             final String domain,
-            final List<IdValidationConstraint> validationConstraints) {
+            final List<T> validationConstraints) {
         Preconditions.checkArgument(null != validationConstraints && !validationConstraints.isEmpty());
         nonceGenerator.registerDomainSpecificConstraints(domain, validationConstraints);
     }
@@ -109,7 +132,7 @@ public class IdGeneratorBase {
     }
 
     public Optional<Id> generateWithConstraints(final String namespace,
-                                                final List<IdValidationConstraint> inConstraints,
+                                                final List<T> inConstraints,
                                                 final boolean skipGlobal) {
         Optional<IdInfo> idInfoOptional = nonceGenerator.generateWithConstraints(namespace, inConstraints, skipGlobal);
         return idInfoOptional.map(idInfo -> nonceGenerator.getIdFromIdInfo(idInfo, namespace, idFormatter));
@@ -117,7 +140,7 @@ public class IdGeneratorBase {
 
     public Optional<Id> generateWithConstraints(IdGenerationRequest request) {
         val idInfo = nonceGenerator.generateWithConstraints(request);
-        return idInfo.map(info -> (nonceGenerator.getIdFromIdInfo(info, request.getPrefix(), request.getIdFormatter())));
+        return idInfo.map(info -> (nonceGenerator.getIdFromIdInfo((IdInfo) info, request.getPrefix(), request.getIdFormatter())));
     }
 
     /**
@@ -145,6 +168,18 @@ public class IdGeneratorBase {
         } catch (Exception e) {
             log.warn("Could not parse idString {}", e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private NonceGeneratorBase<?> getNonceGenerator(final NonceGeneratorType nonceGeneratorType,
+                                                    final IdGeneratorConfig idGeneratorConfig,
+                                                    final Function<String, Integer> partitionResolverSupplier,
+                                                    final MetricRegistry metricRegistry,
+                                                    final Clock clock) {
+        switch (nonceGeneratorType) {
+            case DISTRIBUTED: return new PartitionAwareNonceGenerator(NODE_ID, idGeneratorConfig, partitionResolverSupplier, idFormatter, metricRegistry, clock);
+            case RANDOM:
+            default: return new RandomNonceGenerator(NODE_ID, idFormatter);
         }
     }
 }
