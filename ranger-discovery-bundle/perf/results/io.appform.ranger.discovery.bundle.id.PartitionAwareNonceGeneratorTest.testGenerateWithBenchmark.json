@@ -2,6 +2,6 @@
   "name" : "io.appform.ranger.discovery.bundle.id.PartitionAwareNonceGeneratorTest.testGenerateWithBenchmark",
   "iterations" : 100000,
   "threads" : 5,
-  "totalMillis" : 4487,
-  "avgTime" : 897.4
+  "totalMillis" : 4118,
+  "avgTime" : 823.6
 }

@@ -81,11 +81,11 @@ public class RandomNonceGenerator extends NonceGeneratorBase {
                 () -> {
                             IdInfo idInfo = random(collisionChecker);
                             val id = getIdFromIdInfo(idInfo, request.getPrefix(), request.getIdFormatter());
-                            return new GenerationResult(idInfo,
-                                    validateId(request.getConstraints(),
-                                            id,
-                                            request.isSkipGlobal()),
-                                    request.getDomain());
+                            return GenerationResult.builder()
+                                    .idInfo(idInfo)
+                                    .state(validateId(request.getConstraints(), id, request.isSkipGlobal()))
+                                    .domain(null)
+                                    .build();
                         }))
                 .filter(generationResult -> generationResult.getState() == IdValidationState.VALID)
                 .map(GenerationResult::getIdInfo);
@@ -97,7 +97,11 @@ public class RandomNonceGenerator extends NonceGeneratorBase {
                         () -> {
                             val idInfo = generate(namespace);
                             val id = getIdFromIdInfo(idInfo, namespace, getIdFormatter());
-                            return new GenerationResult(idInfo, validateId(inConstraints, id, skipGlobal), null);
+                            return GenerationResult.builder()
+                                    .idInfo(idInfo)
+                                    .state(validateId(inConstraints, id, skipGlobal))
+                                    .domain(null)
+                                    .build();
                         }))
                 .filter(generationResult -> generationResult.getState() == IdValidationState.VALID)
                 .map(GenerationResult::getIdInfo);

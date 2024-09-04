@@ -79,18 +79,15 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
         this.partitionResolver = partitionResolverSupplier;
         this.metricRegistry = metricRegistry;
         this.clock = clock;
-        RetryPolicy<GenerationResult> retryPolicy = RetryPolicy.<IdInfo>builder()
+        RetryPolicy<GenerationResult> retryPolicy = RetryPolicy.<GenerationResult>builder()
                 .withMaxAttempts(idGeneratorConfig.getPartitionRetryCount())
                 .handleIf(throwable -> true)
                 .handleResultIf(Objects::isNull)
+                .handleResultIf(generationResult -> generationResult.getState() == IdValidationState.INVALID_RETRYABLE)
                 .onRetry(event -> {
                     val res = event.getLastResult();
                     if (null != res && !res.getState().equals(IdValidationState.VALID)) {
-                        val idInfo = res.getIdInfo();
-                        val collisionChecker = Strings.isNullOrEmpty(res.getDomain())
-                                ? Domain.DEFAULT.getCollisionChecker()
-                                : REGISTERED_DOMAINS.get(res.getDomain()).getCollisionChecker();
-                        collisionChecker.free(idInfo.getTime(), idInfo.getExponent());
+                        reAddId(res.getNamespace(), res.getIdInfo());
                     }
                 })
                 .build();
@@ -143,7 +140,7 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
     /**
      * Generate id that matches all passed constraints.
      * NOTE: There are performance implications for this.
-     * The evaluation of constraints will take it's toll on id generation rates.
+     * The evaluation of constraints will take its toll on id generation rates.
      *
      * @param namespace  String namespace
      * @param domain     Domain for constraint selection
@@ -180,12 +177,13 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
                 () -> {
                     val targetPartitionId = getTargetPartitionId();
                     val idInfo = generateForPartition(request.getPrefix(), targetPartitionId);
-                    return new GenerationResult(idInfo,
-                            validateId(request.getConstraints(),
-                                    getIdFromIdInfo(idInfo, request.getPrefix(), getIdFormatter()),
-                                    request.isSkipGlobal()),
-                            request.getDomain());
+                    return GenerationResult.builder()
+                            .idInfo(idInfo)
+                            .state(validateId(request.getConstraints(), getIdFromIdInfo(idInfo, request.getPrefix(), getIdFormatter()), request.isSkipGlobal()))
+                            .domain(request.getDomain())
+                            .build();
                 }))
+                .filter(generationResult -> generationResult.getState() == IdValidationState.VALID)
                 .map(GenerationResult::getIdInfo);
     }
 
@@ -258,6 +256,14 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
     @Override
     public DateTime getDateTimeFromTime(final long time) {
         return IdUtils.getDateTimeFromSeconds(time);
+    }
+
+    private void reAddId(final String namespace, final IdInfo idInfo) {
+        val instant = clock.instant();
+        val prefixIdMap = idStore.computeIfAbsent(namespace, k -> getAndInitPartitionIdTrackers(namespace, clock.instant()));
+        val partitionIdTracker = getPartitionTracker(prefixIdMap, instant);
+        val mappedPartitionId = partitionResolver.apply(getIdFromIdInfo(idInfo, namespace, getIdFormatter()).getId());
+        partitionIdTracker.addId(mappedPartitionId, idInfo);
     }
 
 }
