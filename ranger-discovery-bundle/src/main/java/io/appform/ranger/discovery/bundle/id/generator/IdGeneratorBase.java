@@ -7,6 +7,7 @@ import io.appform.ranger.discovery.bundle.id.Domain;
 import io.appform.ranger.discovery.bundle.id.Id;
 import io.appform.ranger.discovery.bundle.id.IdInfo;
 import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
+import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorBase;
 import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorType;
@@ -29,7 +30,7 @@ import java.util.regex.Pattern;
  */
 @SuppressWarnings("unused")
 @Slf4j
-public class IdGeneratorBase<T> {
+public class IdGeneratorBase {
 
     private final int MINIMUM_ID_LENGTH;
     protected final DateTimeFormatter DATE_TIME_FORMATTER;
@@ -78,24 +79,24 @@ public class IdGeneratorBase<T> {
         nonceGenerator.registerDomain(domain);
     }
 
-    public synchronized void registerGlobalConstraints(final T... constraints) {
+    public synchronized void registerGlobalConstraints(final IdValidationConstraint... constraints) {
         registerGlobalConstraints(ImmutableList.copyOf(constraints));
     }
 
-    public synchronized void registerGlobalConstraints(final List<T> constraints) {
+    public synchronized void registerGlobalConstraints(final List<IdValidationConstraint> constraints) {
         Preconditions.checkArgument(null != constraints && !constraints.isEmpty());
         nonceGenerator.registerGlobalConstraints(constraints);
     }
 
     public synchronized void registerDomainSpecificConstraints(
             final String domain,
-            final T... validationConstraints) {
+            final IdValidationConstraint... validationConstraints) {
         registerDomainSpecificConstraints(domain, ImmutableList.copyOf(validationConstraints));
     }
 
     public synchronized void registerDomainSpecificConstraints(
             final String domain,
-            final List<T> validationConstraints) {
+            final List<IdValidationConstraint> validationConstraints) {
         Preconditions.checkArgument(null != validationConstraints && !validationConstraints.isEmpty());
         nonceGenerator.registerDomainSpecificConstraints(domain, validationConstraints);
     }
@@ -132,7 +133,7 @@ public class IdGeneratorBase<T> {
     }
 
     public Optional<Id> generateWithConstraints(final String namespace,
-                                                final List<T> inConstraints,
+                                                final List<IdValidationConstraint> inConstraints,
                                                 final boolean skipGlobal) {
         Optional<IdInfo> idInfoOptional = nonceGenerator.generateWithConstraints(namespace, inConstraints, skipGlobal);
         return idInfoOptional.map(idInfo -> nonceGenerator.getIdFromIdInfo(idInfo, namespace, idFormatter));
@@ -140,7 +141,7 @@ public class IdGeneratorBase<T> {
 
     public Optional<Id> generateWithConstraints(IdGenerationRequest request) {
         val idInfo = nonceGenerator.generateWithConstraints(request);
-        return idInfo.map(info -> (nonceGenerator.getIdFromIdInfo((IdInfo) info, request.getPrefix(), request.getIdFormatter())));
+        return idInfo.map(info -> (nonceGenerator.getIdFromIdInfo(info, request.getPrefix(), request.getIdFormatter())));
     }
 
     /**
@@ -171,7 +172,7 @@ public class IdGeneratorBase<T> {
         }
     }
 
-    private NonceGeneratorBase<?> getNonceGenerator(final NonceGeneratorType nonceGeneratorType,
+    private NonceGeneratorBase getNonceGenerator(final NonceGeneratorType nonceGeneratorType,
                                                     final IdGeneratorConfig idGeneratorConfig,
                                                     final Function<String, Integer> partitionResolverSupplier,
                                                     final MetricRegistry metricRegistry,

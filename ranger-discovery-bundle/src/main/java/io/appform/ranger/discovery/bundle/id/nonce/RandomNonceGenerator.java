@@ -23,7 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 
-public class RandomNonceGenerator extends NonceGeneratorBase<IdValidationConstraint> {
+public class RandomNonceGenerator extends NonceGeneratorBase {
     private final FailsafeExecutor<GenerationResult> RETRYER;
 
     public RandomNonceGenerator(final int nodeId, final IdFormatter idFormatter) {
@@ -78,11 +78,11 @@ public class RandomNonceGenerator extends NonceGeneratorBase<IdValidationConstra
                 .getCollisionChecker()
                 : Domain.DEFAULT.getCollisionChecker();
         return Optional.ofNullable(RETRYER.get(
-                        () -> {
+                () -> {
                             IdInfo idInfo = random(collisionChecker);
                             val id = getIdFromIdInfo(idInfo, request.getPrefix(), request.getIdFormatter());
                             return new GenerationResult(idInfo,
-                                    validateId((List<IdValidationConstraint>) request.getConstraints(),
+                                    validateId(request.getConstraints(),
                                             id,
                                             request.isSkipGlobal()),
                                     request.getDomain());

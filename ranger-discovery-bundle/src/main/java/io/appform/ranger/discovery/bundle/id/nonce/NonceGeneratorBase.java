@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.appform.ranger.discovery.bundle.id.Domain;
 import io.appform.ranger.discovery.bundle.id.Id;
 import io.appform.ranger.discovery.bundle.id.IdInfo;
+import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatters;
 import io.appform.ranger.discovery.bundle.id.request.IdGenerationRequest;
@@ -21,10 +22,10 @@ import java.util.concurrent.TimeUnit;
 
 
 @Getter
-public abstract class NonceGeneratorBase<T> {
+public abstract class NonceGeneratorBase {
 
     private final SecureRandom SECURE_RANDOM = new SecureRandom(Long.toBinaryString(System.currentTimeMillis()).getBytes());
-    protected List<T> GLOBAL_CONSTRAINTS = new ArrayList<>();
+    protected List<IdValidationConstraint> GLOBAL_CONSTRAINTS = new ArrayList<>();
     protected final Map<String, Domain> REGISTERED_DOMAINS = new ConcurrentHashMap<>(Map.of(Domain.DEFAULT_DOMAIN_NAME, Domain.DEFAULT));
     private final int nodeId;
     private final IdFormatter idFormatter;
@@ -43,16 +44,16 @@ public abstract class NonceGeneratorBase<T> {
         REGISTERED_DOMAINS.put(domain.getDomain(), domain);
     }
 
-    public synchronized void registerGlobalConstraints(final List<T> constraints) {
+    public synchronized void registerGlobalConstraints(final List<IdValidationConstraint> constraints) {
         Preconditions.checkArgument(null != constraints && !constraints.isEmpty());
         GLOBAL_CONSTRAINTS.addAll(constraints);
     }
 
     public synchronized void registerDomainSpecificConstraints(
             final String domain,
-            final List<T> validationConstraints) {
+            final List<IdValidationConstraint> validationConstraints) {
         Preconditions.checkArgument(null != validationConstraints && !validationConstraints.isEmpty());
-        REGISTERED_DOMAINS.computeIfAbsent(domain, key -> Domain.<T>builder()
+        REGISTERED_DOMAINS.computeIfAbsent(domain, key -> Domain.builder()
                 .domain(domain)
                 .constraints(validationConstraints)
                 .idFormatter(IdFormatters.original())
@@ -94,7 +95,7 @@ public abstract class NonceGeneratorBase<T> {
     public abstract Optional<IdInfo> generateWithConstraints(final IdGenerationRequest request);
 
     public abstract Optional<IdInfo> generateWithConstraints(final String namespace,
-                                                             final List<T> inConstraints,
+                                                             final List<IdValidationConstraint> inConstraints,
                                                              final boolean skipGlobal);
 
     public abstract IdInfo generateForPartition(final String namespace, final int targetPartitionId) ;

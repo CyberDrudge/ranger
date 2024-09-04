@@ -1,16 +1,20 @@
 package io.appform.ranger.discovery.bundle.id.nonce;
 
 import com.codahale.metrics.MetricRegistry;
+import com.google.common.base.Strings;
 import dev.failsafe.Failsafe;
 import dev.failsafe.FailsafeExecutor;
 import dev.failsafe.RetryPolicy;
 import io.appform.ranger.discovery.bundle.id.Domain;
+import io.appform.ranger.discovery.bundle.id.GenerationResult;
+import io.appform.ranger.discovery.bundle.id.Id;
 import io.appform.ranger.discovery.bundle.id.IdInfo;
 import io.appform.ranger.discovery.bundle.id.IdUtils;
+import io.appform.ranger.discovery.bundle.id.IdValidationState;
 import io.appform.ranger.discovery.bundle.id.PartitionIdTracker;
 import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
 import io.appform.ranger.discovery.bundle.id.config.NamespaceConfig;
-import io.appform.ranger.discovery.bundle.id.constraints.PartitionValidationConstraint;
+import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatter;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatters;
 import io.appform.ranger.discovery.bundle.id.request.IdGenerationRequest;
@@ -34,8 +38,8 @@ import java.util.function.Function;
 @SuppressWarnings("unused")
 @Slf4j
 @Getter
-public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionValidationConstraint> {
-    private final FailsafeExecutor<Integer> RETRYER;
+public class PartitionAwareNonceGenerator extends NonceGeneratorBase {
+    private final FailsafeExecutor<GenerationResult> RETRYER;
     private final Map<String, PartitionIdTracker[]> idStore = new ConcurrentHashMap<>();
     private final Function<String, Integer> partitionResolver;
     private final IdGeneratorConfig idGeneratorConfig;
@@ -75,10 +79,20 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionVa
         this.partitionResolver = partitionResolverSupplier;
         this.metricRegistry = metricRegistry;
         this.clock = clock;
-        RetryPolicy<Integer> retryPolicy = RetryPolicy.<Integer>builder()
+        RetryPolicy<GenerationResult> retryPolicy = RetryPolicy.<IdInfo>builder()
                 .withMaxAttempts(idGeneratorConfig.getPartitionRetryCount())
                 .handleIf(throwable -> true)
                 .handleResultIf(Objects::isNull)
+                .onRetry(event -> {
+                    val res = event.getLastResult();
+                    if (null != res && !res.getState().equals(IdValidationState.VALID)) {
+                        val idInfo = res.getIdInfo();
+                        val collisionChecker = Strings.isNullOrEmpty(res.getDomain())
+                                ? Domain.DEFAULT.getCollisionChecker()
+                                : REGISTERED_DOMAINS.get(res.getDomain()).getCollisionChecker();
+                        collisionChecker.free(idInfo.getTime(), idInfo.getExponent());
+                    }
+                })
                 .build();
         RETRYER = Failsafe.with(Collections.singletonList(retryPolicy));
     }
@@ -111,8 +125,8 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionVa
     }
 
     private Integer generateForAllPartitions(final PartitionIdTracker partitionIdTracker,
-                                                       final String namespace,
-                                                       final int targetPartitionId) {
+                                             final String namespace,
+                                             final int targetPartitionId) {
         val idPool = partitionIdTracker.getPartition(targetPartitionId);
         Optional<Integer> idOptional = idPool.getNextId();
         while (idOptional.isEmpty()) {
@@ -129,19 +143,6 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionVa
     /**
      * Generate id that matches all passed constraints.
      * NOTE: There are performance implications for this.
-     * The evaluation of constraints will take it's toll on ID generation rates.
-     *
-     * @param namespace String namespace
-     * @param domain    Domain for constraint selection
-     * @return Return generated id or empty if it was impossible to satisfy constraints and generate
-     */
-    public Optional<IdInfo> generateWithConstraints(final String namespace, final String domain) {
-        return generateWithConstraints(namespace, domain, true);
-    }
-
-    /**
-     * Generate id that matches all passed constraints.
-     * NOTE: There are performance implications for this.
      * The evaluation of constraints will take it's toll on id generation rates.
      *
      * @param namespace  String namespace
@@ -151,62 +152,75 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionVa
      */
     @Override
     public Optional<IdInfo> generateWithConstraints(final String namespace, final String domain, final boolean skipGlobal) {
-        val targetPartitionId = getTargetPartitionId((List<PartitionValidationConstraint>)REGISTERED_DOMAINS.getOrDefault(domain, Domain.DEFAULT).getConstraints(), skipGlobal);
-        return targetPartitionId.map(partitionId -> generateForPartition(namespace, partitionId));
+        return generateWithConstraints(IdGenerationRequest.builder()
+                .prefix(namespace)
+                .domain(domain)
+                .constraints(REGISTERED_DOMAINS.getOrDefault(domain, Domain.DEFAULT).getConstraints())
+                .skipGlobal(skipGlobal)
+                .build());
     }
 
     @Override
     public Optional<IdInfo> generateWithConstraints(final String namespace,
-                                                    final List<PartitionValidationConstraint> inConstraints,
+                                                    final List<IdValidationConstraint> inConstraints,
                                                     final boolean skipGlobal) {
-        val targetPartitionId = getTargetPartitionId(inConstraints, skipGlobal);
-        return targetPartitionId.map(partitionId -> generateForPartition(namespace, partitionId));
+        return generateWithConstraints(IdGenerationRequest.builder()
+                .prefix(namespace)
+                .constraints(inConstraints)
+                .skipGlobal(skipGlobal)
+                .build());
     }
 
     @Override
     public Optional<IdInfo> generateWithConstraints(final IdGenerationRequest request) {
-        val targetPartitionId = getTargetPartitionId((List<PartitionValidationConstraint>) request.getConstraints(), request.isSkipGlobal());
-        return targetPartitionId.map(partitionId -> generateForPartition(request.getPrefix(), partitionId));
+        val instant = clock.instant();
+        val prefixIdMap = idStore.computeIfAbsent(request.getPrefix(), k -> getAndInitPartitionIdTrackers(request.getPrefix(), clock.instant()));
+        val partitionIdTracker = getPartitionTracker(prefixIdMap, instant);
+        return Optional.ofNullable(RETRYER.get(
+                () -> {
+                    val targetPartitionId = getTargetPartitionId();
+                    val idInfo = generateForPartition(request.getPrefix(), targetPartitionId);
+                    return new GenerationResult(idInfo,
+                            validateId(request.getConstraints(),
+                                    getIdFromIdInfo(idInfo, request.getPrefix(), getIdFormatter()),
+                                    request.isSkipGlobal()),
+                            request.getDomain());
+                }))
+                .map(GenerationResult::getIdInfo);
     }
-
 
     protected int getTargetPartitionId() {
         return getSECURE_RANDOM().nextInt(idGeneratorConfig.getPartitionCount());
     }
 
-
-    protected Optional<Integer> getTargetPartitionId(final List<PartitionValidationConstraint> inConstraints, final boolean skipGlobal) {
-        return Optional.ofNullable(
-                RETRYER.get(() -> {
-                    val partitionId = getSECURE_RANDOM().nextInt(idGeneratorConfig.getPartitionCount());
-                    return validateId(inConstraints, partitionId, skipGlobal) ? partitionId : null;
-                })
-        );
-    }
-
-    protected boolean validateId(final List<PartitionValidationConstraint> inConstraints,
-                                 final int partitionId,
-                                 final boolean skipGlobal) {
+    private IdValidationState validateId(final List<IdValidationConstraint> inConstraints, final Id id, boolean skipGlobal) {
         //First evaluate global constraints
         val failedGlobalConstraint
                 = skipGlobal
                 ? null
                 : getGLOBAL_CONSTRAINTS().stream()
-                .filter(constraint -> !constraint.isValid(partitionId))
+                .filter(constraint -> !constraint.isValid(id))
                 .findFirst()
                 .orElse(null);
         if (null != failedGlobalConstraint) {
-            return false;
+            return failedGlobalConstraint.failFast()
+                    ? IdValidationState.INVALID_NON_RETRYABLE
+                    : IdValidationState.INVALID_RETRYABLE;
         }
-        //Evaluate param constraints
+        //Evaluate local + domain constraints
         val failedLocalConstraint
                 = null == inConstraints
                 ? null
                 : inConstraints.stream()
-                .filter(constraint -> !constraint.isValid(partitionId))
+                .filter(constraint -> !constraint.isValid(id))
                 .findFirst()
                 .orElse(null);
-        return null == failedLocalConstraint;
+        if (null != failedLocalConstraint) {
+            return failedLocalConstraint.failFast()
+                    ? IdValidationState.INVALID_NON_RETRYABLE
+                    : IdValidationState.INVALID_RETRYABLE;
+        }
+        return IdValidationState.VALID;
     }
 
     private int getIdPoolSize(String namespace) {
@@ -227,7 +241,7 @@ public class PartitionAwareNonceGenerator extends NonceGeneratorBase<PartitionVa
         return partitionTrackerList;
     }
 
-    private int getTimeKey(Instant instant) {
+    private int getTimeKey(final Instant instant) {
         val timeInSeconds = instant.getEpochSecond();
         return (int) timeInSeconds % idGeneratorConfig.getDataStorageLimitInSeconds();
     }

@@ -30,7 +30,7 @@ public class IdGenerationRequest {
     String prefix;
     String domain;
     boolean skipGlobal;
-    List<?> constraints;
+    List<IdValidationConstraint> constraints;
     IdFormatter idFormatter;
 
 }

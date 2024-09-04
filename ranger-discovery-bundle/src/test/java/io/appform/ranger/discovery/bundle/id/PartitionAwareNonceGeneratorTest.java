@@ -4,7 +4,7 @@ import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import io.appform.ranger.discovery.bundle.id.config.DefaultNamespaceConfig;
 import io.appform.ranger.discovery.bundle.id.config.IdGeneratorConfig;
-import io.appform.ranger.discovery.bundle.id.constraints.PartitionValidationConstraint;
+import io.appform.ranger.discovery.bundle.id.constraints.IdValidationConstraint;
 import io.appform.ranger.discovery.bundle.id.formatter.IdFormatters;
 import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorType;
 import io.appform.ranger.discovery.bundle.id.generator.DistributedIdGenerator;
@@ -83,7 +83,7 @@ class PartitionAwareNonceGeneratorTest {
     @Test
     void testGenerateWithConstraints() throws IOException {
         val allIdsList = Collections.synchronizedList(new ArrayList<String>());
-        PartitionValidationConstraint partitionConstraint = (k) -> k % 4 == 0;
+        IdValidationConstraint partitionConstraint = (k) -> k % 4 == 0;
         val iterationCount = 50000;
         distributedIdGenerator.registerGlobalConstraints(partitionConstraint);
         val totalTime = TestUtil.runMTTest(
