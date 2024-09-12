@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -306,26 +307,26 @@ class PartitionAwareNonceGeneratorTest {
         Assertions.assertFalse(distributedIdGenerator.parse("ABC2011250959720643972247").isPresent());
     }
 
-//    @Test
-//    void testParseSuccess() {
-//        val idString = "ABC2011250959030643972247";
-//        val id = distributedIdGenerator.parse(idString).orElse(null);
-//        Assertions.assertNotNull(id);
-//        Assertions.assertEquals(idString, id.getId());
-//        Assertions.assertEquals(972247, id.getExponent());
-//        Assertions.assertEquals(643, id.getNode());
-//        Assertions.assertEquals(TestUtil.generateDate(2020, 11, 25, 9, 59, 3, 0, ZoneId.systemDefault()),
-//                id.getGeneratedDate());
-//    }
-//
-//    @Test
-//    void testParseSuccessAfterGeneration() {
-//        val generatedId = distributedIdGenerator.generate("TEST123");
-//        val parsedId = distributedIdGenerator.parse(generatedId.getId()).orElse(null);
-//        Assertions.assertNotNull(parsedId);
-//        Assertions.assertEquals(parsedId.getId(), generatedId.getId());
-//        Assertions.assertEquals(parsedId.getExponent(), generatedId.getExponent());
-//        Assertions.assertEquals(parsedId.getNode(), generatedId.getNode());
-//    }
+    @Test
+    void testParseSuccess() {
+        val idString = "ABC2011250959030643972247";
+        val id = distributedIdGenerator.parse(idString).orElse(null);
+        Assertions.assertNotNull(id);
+        Assertions.assertEquals(idString, id.getId());
+        Assertions.assertEquals(972247, id.getExponent());
+        Assertions.assertEquals(643, id.getNode());
+        Assertions.assertEquals(TestUtil.generateDate(2020, 11, 25, 9, 59, 3, 0, ZoneId.systemDefault()),
+                id.getGeneratedDate());
+    }
+
+    @Test
+    void testParseSuccessAfterGeneration() {
+        val generatedId = distributedIdGenerator.generate("TEST123");
+        val parsedId = distributedIdGenerator.parse(generatedId.getId()).orElse(null);
+        Assertions.assertNotNull(parsedId);
+        Assertions.assertEquals(parsedId.getId(), generatedId.getId());
+        Assertions.assertEquals(parsedId.getExponent(), generatedId.getExponent());
+        Assertions.assertEquals(parsedId.getNode(), generatedId.getNode());
+    }
 
 }

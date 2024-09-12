@@ -26,6 +26,10 @@ import java.util.stream.Collectors;
 @NoArgsConstructor
 public class IdGeneratorConfig {
 
+    /** Optional for non-weighted scenarios */
+    @Valid
+    private WeightedIdConfig weightedIdConfig;
+
     @NotNull
     @Valid
     private DefaultNamespaceConfig defaultNamespaceConfig;
@@ -56,6 +60,17 @@ public class IdGeneratorConfig {
                         .map(NamespaceConfig::getNamespace)
                         .collect(Collectors.toSet());
         return namespaceConfig.size() == namespaces.size();
+    }
+
+    @ValidationMethod(message = "Invalid Partition Range")
+    @JsonIgnore
+    public boolean isPartitionCountValid() {
+        if (weightedIdConfig != null) {
+            List<WeightedPartition> sortedPartitions = new ArrayList<>(weightedIdConfig.getPartitions());
+            sortedPartitions.sort(Comparator.comparingInt(k -> k.getPartitionRange().getStart()));
+            return sortedPartitions.get(sortedPartitions.size() - 1).getPartitionRange().getEnd() - sortedPartitions.get(0).getPartitionRange().getStart() + 1 == partitionCount;
+        }
+        return true;
     }
 
 }

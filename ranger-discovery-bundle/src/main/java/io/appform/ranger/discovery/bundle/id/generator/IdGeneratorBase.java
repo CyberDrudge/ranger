@@ -13,6 +13,7 @@ import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorBase;
 import io.appform.ranger.discovery.bundle.id.nonce.NonceGeneratorType;
 import io.appform.ranger.discovery.bundle.id.nonce.PartitionAwareNonceGenerator;
 import io.appform.ranger.discovery.bundle.id.nonce.RandomNonceGenerator;
+import io.appform.ranger.discovery.bundle.id.nonce.WeightedNonceGenerator;
 import io.appform.ranger.discovery.bundle.id.request.IdGenerationRequest;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -179,8 +180,10 @@ public class IdGeneratorBase {
                                                     final Clock clock) {
         switch (nonceGeneratorType) {
             case DISTRIBUTED: return new PartitionAwareNonceGenerator(NODE_ID, idGeneratorConfig, partitionResolverSupplier, idFormatter, metricRegistry, clock);
+            case WEIGHTED_DISTRIBUTED: return new WeightedNonceGenerator(NODE_ID, idGeneratorConfig, partitionResolverSupplier, idFormatter, metricRegistry, clock);
             case RANDOM:
             default: return new RandomNonceGenerator(NODE_ID, idFormatter);
         }
     }
+
 }
