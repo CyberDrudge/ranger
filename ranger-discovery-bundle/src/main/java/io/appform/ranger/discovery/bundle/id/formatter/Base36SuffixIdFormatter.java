@@ -28,8 +28,8 @@ import java.util.regex.Pattern;
 
 public class Base36SuffixIdFormatter implements IdFormatter {
 
-    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)(0)([0-9]{15})([0-9]{2})([0-9]*)");
-    private static final Pattern DATE_FORMAT_PATTERN = Pattern.compile("([0-9]{15})([0-9]{4})([0-9]{3})");
+    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)(0)([A-Z0-9]{16})([0-9]*)");
+    private static final Pattern DATE_FORMAT_PATTERN = Pattern.compile("([0-9]{15})([0-9]{4})([0-9]{3})([0-9]{2})");
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormat.forPattern("yyMMddHHmmssSSS");
     private static final Integer BASE36_MAX_LENGTH = 15;
 
@@ -40,7 +40,7 @@ public class Base36SuffixIdFormatter implements IdFormatter {
 
     @Override
     public String format(DateTime dateTime, int nodeId, int randomNonce) {
-        return String.format("%s%04d%03d%02d", toBase36(DATE_TIME_FORMATTER.print(dateTime)), nodeId, randomNonce, getType().getValue());
+        return String.join("","0", toBase36(String.format("%s%04d%03d%02d", DATE_TIME_FORMATTER.print(dateTime), nodeId, randomNonce, getType().getValue())));
     }
 
     @Override
@@ -60,7 +60,7 @@ public class Base36SuffixIdFormatter implements IdFormatter {
         return Optional.of(Id.builder()
                 .id(idString)
                 .prefix(matcher.group(1))
-                .suffix(matcher.group(5))
+                .suffix(matcher.group(4))
                 .node(Integer.parseInt(dateMatcher.group(2)))
                 .exponent(Integer.parseInt(dateMatcher.group(3)))
                 .generatedDate(DATE_TIME_FORMATTER.parseDateTime(dateMatcher.group(1)).toDate())

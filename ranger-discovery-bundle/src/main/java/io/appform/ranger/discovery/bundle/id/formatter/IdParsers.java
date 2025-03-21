@@ -24,18 +24,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-
 @Slf4j
 @UtilityClass
 public class IdParsers {
     private static final int MINIMUM_ID_LENGTH = 22;
-    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)([0-9]{22})([0-9]{2})?(.*)");
-    private static final Pattern BASE36_PATTERN = Pattern.compile("([A-Za-z]*)(0)([0-9]{15})([0-9]{2})?(.*)");
+    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)([0-9]{15})([0-9]{2})?(.*)");
+    private static final Pattern BASE36_PATTERN = Pattern.compile("([A-Za-z]*)(0)([0-9]{16})?(.*)");
 
     private final Map<Integer, IdFormatter> parserRegistry = Map.of(
             IdFormatters.original().getType().getValue(), IdFormatters.original(),
             IdFormatters.suffix().getType().getValue(), IdFormatters.suffix(),
-            IdFormatters.suffix().getType().getValue(), IdFormatters.base36()
+            IdFormatters.base36Suffix().getType().getValue(), IdFormatters.base36Suffix()
     );
 
     /**
@@ -44,7 +43,7 @@ public class IdParsers {
      * @param idString String idString
      * @return ID if it could be generated
      */
-    public Optional<Id> parse(final String idString) {
+    public static Optional<Id> parse(final String idString) {
         if (idString == null || idString.length() < MINIMUM_ID_LENGTH) {
             return Optional.empty();
         }
@@ -58,7 +57,8 @@ public class IdParsers {
 
             val base36Separator = base36Matcher.group(2);
             if (base36Separator != null && base36Separator.equals("0")) {
-                return IdFormatters.base36Suffix().parse(idString);
+                val op =  IdFormatters.base36Suffix();
+                return op.parse(idString);
             }
 
             val parserType = matcher.group(3);
@@ -77,5 +77,4 @@ public class IdParsers {
             return Optional.empty();
         }
     }
-
 }
