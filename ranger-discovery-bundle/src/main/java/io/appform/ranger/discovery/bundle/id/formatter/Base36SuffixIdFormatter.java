@@ -31,7 +31,7 @@ public class Base36SuffixIdFormatter implements IdFormatter {
     private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)(0)([A-Z0-9]{16})([0-9]*)");
     private static final Pattern DATE_FORMAT_PATTERN = Pattern.compile("([0-9]{15})([0-9]{4})([0-9]{3})([0-9]{2})");
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormat.forPattern("yyMMddHHmmssSSS");
-    private static final Integer BASE36_MAX_LENGTH = 15;
+    private static final Integer BASE36_MAX_LENGTH = 16;
 
     @Override
     public IdParserType getType() {
