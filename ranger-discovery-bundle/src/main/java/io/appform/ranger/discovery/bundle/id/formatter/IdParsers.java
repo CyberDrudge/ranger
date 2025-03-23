@@ -28,8 +28,8 @@ import java.util.regex.Pattern;
 @UtilityClass
 public class IdParsers {
     private static final int MINIMUM_ID_LENGTH = 22;
-    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)([0-9]{15})([0-9]{2})?(.*)");
-    private static final Pattern BASE36_PATTERN = Pattern.compile("([A-Za-z]*)(0)([0-9]{16})?(.*)");
+    private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)([0-9]{22})([0-9]{2})?(.*)");
+    private static final Pattern BASE36_PATTERN = Pattern.compile("([A-Za-z]+)(0)?(.*)");
 
     private final Map<Integer, IdFormatter> parserRegistry = Map.of(
             IdFormatters.original().getType().getValue(), IdFormatters.original(),
@@ -48,10 +48,13 @@ public class IdParsers {
             return Optional.empty();
         }
         try {
-            val matcher = PATTERN.matcher(idString);
+            val defaultMatcher = PATTERN.matcher(idString);
             val base36Matcher = BASE36_PATTERN.matcher(idString);
 
-            if (!matcher.find() && !base36Matcher.find()) {
+            val isDefaultMatch = defaultMatcher.find();
+            val isBase36Match = base36Matcher.find();
+
+            if (!isDefaultMatch && !isBase36Match) {
                 return Optional.empty();
             }
 
@@ -61,12 +64,12 @@ public class IdParsers {
                 return op.parse(idString);
             }
 
-            val parserType = matcher.group(3);
+            val parserType = defaultMatcher.group(3);
             if (parserType == null) {
                 return IdFormatters.original().parse(idString);
             }
 
-            val parser = parserRegistry.get(Integer.parseInt(matcher.group(3)));
+            val parser = parserRegistry.get(Integer.parseInt(defaultMatcher.group(3)));
             if (parser == null) {
                 log.warn("Could not parse idString {}, Invalid formatter type {}", idString, parserType);
                 return Optional.empty();
