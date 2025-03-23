@@ -43,7 +43,7 @@ public class IdParsers {
      * @param idString String idString
      * @return ID if it could be generated
      */
-    public static Optional<Id> parse(final String idString) {
+    public Optional<Id> parse(final String idString) {
         if (idString == null || idString.length() < MINIMUM_ID_LENGTH) {
             return Optional.empty();
         }
