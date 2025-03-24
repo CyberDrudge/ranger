@@ -50,8 +50,10 @@ public class Base36SuffixIdFormatter implements IdFormatter {
         if (!matcher.find()) {
             return Optional.empty();
         }
-        val base36Date = matcher.group(3);
-        val base10Date = toBase10(base36Date);
+        val base36Data = matcher.group(3);
+        val base10Data = toBase10(base36Data);
+
+        val base10Date = base10Data.substring(0, base10Data.length() - 2);
 
         val dateMatcher = DATE_FORMAT_PATTERN.matcher(base10Date);
         if (!dateMatcher.find()) {
