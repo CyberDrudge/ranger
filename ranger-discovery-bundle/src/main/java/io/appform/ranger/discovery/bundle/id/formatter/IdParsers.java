@@ -24,16 +24,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-
 @Slf4j
 @UtilityClass
 public class IdParsers {
     private static final int MINIMUM_ID_LENGTH = 22;
     private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)([0-9]{22})([0-9]{2})?(.*)");
+    private static final Pattern BASE36_PATTERN = Pattern.compile("([A-Za-z]+)(0)?(.*)");
 
     private final Map<Integer, IdFormatter> parserRegistry = Map.of(
             IdFormatters.original().getType().getValue(), IdFormatters.original(),
-            IdFormatters.suffix().getType().getValue(), IdFormatters.suffix()
+            IdFormatters.suffix().getType().getValue(), IdFormatters.suffix(),
+            IdFormatters.base36Suffix().getType().getValue(), IdFormatters.base36Suffix()
     );
 
     /**
@@ -47,17 +48,28 @@ public class IdParsers {
             return Optional.empty();
         }
         try {
-            val matcher = PATTERN.matcher(idString);
-            if (!matcher.find()) {
+            val defaultMatcher = PATTERN.matcher(idString);
+            val base36Matcher = BASE36_PATTERN.matcher(idString);
+
+            val isDefaultMatch = defaultMatcher.find();
+            val isBase36Match = base36Matcher.find();
+
+            if (!isDefaultMatch && !isBase36Match) {
                 return Optional.empty();
             }
 
-            val parserType = matcher.group(3);
+            val base36Separator = base36Matcher.group(2);
+            if (base36Separator != null && base36Separator.equals("0")) {
+                val op =  IdFormatters.base36Suffix();
+                return op.parse(idString);
+            }
+
+            val parserType = defaultMatcher.group(3);
             if (parserType == null) {
                 return IdFormatters.original().parse(idString);
             }
 
-            val parser = parserRegistry.get(Integer.parseInt(matcher.group(3)));
+            val parser = parserRegistry.get(Integer.parseInt(defaultMatcher.group(3)));
             if (parser == null) {
                 log.warn("Could not parse idString {}, Invalid formatter type {}", idString, parserType);
                 return Optional.empty();
@@ -68,5 +80,4 @@ public class IdParsers {
             return Optional.empty();
         }
     }
-
 }
