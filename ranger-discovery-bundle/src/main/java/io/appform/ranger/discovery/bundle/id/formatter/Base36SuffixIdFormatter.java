@@ -40,7 +40,8 @@ public class Base36SuffixIdFormatter implements IdFormatter {
 
     @Override
     public String format(DateTime dateTime, int nodeId, int randomNonce) {
-        return String.join("","0", toBase36(String.format("%s%04d%03d%02d", DATE_TIME_FORMATTER.print(dateTime), nodeId, randomNonce, getType().getValue())));
+        return String.join("", /* Prefix Separator*/ "0",
+                toBase36(String.format("%s%04d%03d%02d", DATE_TIME_FORMATTER.print(dateTime), nodeId, randomNonce, getType().getValue())));
     }
 
     @Override
