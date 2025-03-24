@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
 public class Base36SuffixIdFormatter implements IdFormatter {
 
     private static final Pattern PATTERN = Pattern.compile("([A-Za-z]*)(0)([A-Z0-9]{16})([0-9]*)");
-    private static final Pattern DATE_FORMAT_PATTERN = Pattern.compile("([0-9]{15})([0-9]{4})([0-9]{3})([0-9]{2})");
+    private static final Pattern BASE10_PATTERN = Pattern.compile("([0-9]{15})([0-9]{4})([0-9]{3})([0-9]{2})");
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormat.forPattern("yyMMddHHmmssSSS");
     private static final Integer BASE36_MAX_LENGTH = 16;
 
@@ -53,10 +53,8 @@ public class Base36SuffixIdFormatter implements IdFormatter {
         val base36Data = matcher.group(3);
         val base10Data = toBase10(base36Data);
 
-        val base10Date = base10Data.substring(0, base10Data.length() - 2);
-
-        val dateMatcher = DATE_FORMAT_PATTERN.matcher(base10Date);
-        if (!dateMatcher.find()) {
+        val base10Matcher = BASE10_PATTERN.matcher(base10Data);
+        if (!base10Matcher.find()) {
             return Optional.empty();
         }
 
@@ -64,9 +62,9 @@ public class Base36SuffixIdFormatter implements IdFormatter {
                 .id(idString)
                 .prefix(matcher.group(1))
                 .suffix(matcher.group(4))
-                .node(Integer.parseInt(dateMatcher.group(2)))
-                .exponent(Integer.parseInt(dateMatcher.group(3)))
-                .generatedDate(DATE_TIME_FORMATTER.parseDateTime(dateMatcher.group(1)).toDate())
+                .node(Integer.parseInt(base10Matcher.group(2)))
+                .exponent(Integer.parseInt(base10Matcher.group(3)))
+                .generatedDate(DATE_TIME_FORMATTER.parseDateTime(base10Matcher.group(1)).toDate())
                 .build());
     }
 
